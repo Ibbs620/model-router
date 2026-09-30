@@ -115,7 +115,8 @@ class LayaClassifierEngine(ClassifierEngine):
                 state, question
             )
         print(output)
-        tier = round(output['answers']['classify_complexity']['score'])
+        probabilities = output['answers']['classify_complexity']['probabilities']
+        tier = max(probabilities, key=probabilities.get)
         return output['answers']['classify_complexity']['legend'][str(tier)]
 
     def classify_text(self, text, max_new_tokens=16, temperature=0.0):
