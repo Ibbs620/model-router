@@ -12,6 +12,8 @@ import json
 import re
 from typing import Any, List, Optional, Sequence, Tuple
 
+from .classifier.laya_engine import LayaClassifierEngine
+
 from .types import ClassifierRequest, ComplexityLevel, XRouterParams
 
 __all__ = [
@@ -279,7 +281,10 @@ def classify(messages, params):
         return _safe_heuristic(messages, SOURCE_HEURISTIC)
 
     try:
-        request = build_classifier_request(messages, params.classifier_preview_chars)
+        if isinstance(backend.engine, LayaClassifierEngine):
+            request = ClassifierRequest(prompt=conversation_preview(messages, params.classifier_preview_chars))
+        else:
+            request = build_classifier_request(messages, params.classifier_preview_chars)
     except Exception:
         return _safe_heuristic(messages, SOURCE_HEURISTIC_FALLBACK)
 

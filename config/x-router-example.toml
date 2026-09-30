@@ -24,7 +24,9 @@ REASONING = "vendor-c/reasoning"
 # to start. Omit this table, or set enabled = false, to run heuristic-only.
 [x-router.classifier_model]
 enabled = true
-model_path = "/path/to/Qwen/Qwen3-0.6B"
+system_one_model = false
+model_path = "C:/Users/A2306101941/models/Qwen3-0.6B"
+# model_path = "C:/Users/A2306101941/models/laya"
 
 # "auto" picks cuda:0 when CUDA is available, else cpu. Pin an index on a shared
 # box so the classifier does not land on a card that is already busy.
