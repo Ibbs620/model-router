@@ -8,7 +8,13 @@ ttl_secs = 300
 max_entries = 1024
 
 [targets]
-models = ["local", "vendor-a/fast", "vendor-b/deep", "vendor-c/reasoning"]
+models = [
+  "z-ai/glm-5.3-flash",
+  "deepseek/deepseek-v3.2",
+  "deepseek/deepseek-v4.1-flash",
+  "deepseek/deepseek-v4.1-flash",
+  "anthropic/claude-sonnet-4.6",
+]
 
 [x-router]
 local_capability_level = "MEDIUM"   # SIMPLE..REASONING, or "NONE" to disable the local tier
@@ -24,9 +30,9 @@ REASONING = "vendor-c/reasoning"
 # to start. Omit this table, or set enabled = false, to run heuristic-only.
 [x-router.classifier_model]
 enabled = true
-system_one_model = false
-model_path = "C:/Users/A2306101941/models/Qwen3-0.6B"
-# model_path = "C:/Users/A2306101941/models/laya"
+system_one_model = true
+# model_path = "C:/Users/A2306101941/models/Qwen3-0.6B"
+model_path = "C:/Users/A2306101941/models/laya"
 
 # "auto" picks cuda:0 when CUDA is available, else cpu. Pin an index on a shared
 # box so the classifier does not land on a card that is already busy.
