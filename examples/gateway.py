@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 HERE = Path(__file__).parent
 load_dotenv(HERE / ".env", override=True)          # before anything reads os.environ
 
-from openjiuwen.x_router.service import build_service            # noqa: E402
+from openjiuwen.x_router.service import build_service, parse_reasoning            # noqa: E402
 from openjiuwen.x_router.complexity import conversation_preview   # noqa: E402
 
 try:
@@ -48,6 +48,34 @@ _log_lock = threading.Lock()
 SESSION_COUNT = {}                     # session id -> requests seen
 CURRENT = {"label": ""}                # set via POST /mark/{label}
 
+
+import re
+
+SOURCE_RE = re.compile(r"\bsource=([^\s,;]+)")
+# only the known-bad source is fatal; other sources (e.g. a bandit override) are logged, not blocked
+BAD_SOURCES = {s for s in os.environ.get("BAD_ROUTE_SOURCES", "heuristic_fallback").split(",") if s}
+HALT = {"reason": None, "since": None, "rejected": 0}
+
+
+def route_source(sel):
+    m = SOURCE_RE.search(str(getattr(sel, "reasoning", "") or ""))
+    return m.group(1) if m else None
+
+
+def halt(reason):
+    if HALT["reason"] is not None:
+        return
+    HALT.update(reason=reason, since=time.strftime("%Y-%m-%dT%H:%M:%S"))
+    (LOG_DIR / "HALTED.txt").write_text(f"{HALT['since']}\n{reason}\n", encoding="utf-8")
+    print("\n" + "!" * 70 + f"\nROUTER HALTED: {reason}\nAll requests now return 503 "
+          "until POST /resume\n" + "!" * 70 + "\n", flush=True)
+
+
+def halted_response():
+    HALT["rejected"] += 1
+    return JSONResponse({"error": {
+        "type": "router_unhealthy",
+        "message": f"Router halted since {HALT['since']}: {HALT['reason']}"}}, status_code=503)
 
 # ---------------------------------------------------------------- helpers
 def write_jsonl(name, rec):
@@ -149,6 +177,8 @@ def mark(label: str):
 # ---------------------------------------------------------------- main handler
 @app.post("/v1/chat/completions")
 async def chat(req: Request):
+    if HALT["reason"]:
+        return halted_response()          # no routing, no GPU, no upstream call
     rec = None
     try:
         body = await req.json()
@@ -186,6 +216,18 @@ async def chat(req: Request):
         sel, cap = await asyncio.to_thread(route_and_capture, msgs, sid)
         route_ms = (time.perf_counter() - t_route) * 1000
         cap = cap or {}
+
+        source = route_source(sel)
+        rec["route_source"] = source
+        if source in BAD_SOURCES:
+            halt(f"route source={source} (classifier failed; reasoning: {getattr(sel, 'reasoning', None)})")
+            rec.update({"ok": False, "error": f"router_fallback:{source}",
+                        "tier": cap.get("tier"), "router_model": sel.selected_model_id,
+                        "reasoning": getattr(sel, "reasoning", None),
+                        "route_ms": round(route_ms, 1)})
+            write_jsonl("requests.jsonl", rec)
+            return halted_response()
+
         up = UPSTREAMS[sel.selected_model_id]
         rec.update({
             "tier": cap.get("tier"),
@@ -286,3 +328,30 @@ async def chat(req: Request):
             rec.update({"ok": False, "error": f"{type(e).__name__}: {e}"})
             write_jsonl("requests.jsonl", rec)
         return JSONResponse({"error": {"message": f"{type(e).__name__}: {e}"}}, status_code=500)
+
+@app.get("/health")
+def health():
+    return {"halted": HALT, "router": svc.stats}
+
+
+@app.post("/resume")
+def resume():
+    """Clear the halt after you've fixed the cause (and checked that Laya is healthy)."""
+    HALT.update(reason=None, since=None, rejected=0)
+    try:
+        (LOG_DIR / "HALTED.txt").unlink()
+    except FileNotFoundError:
+        pass
+    return {"resumed": True}
+
+
+@app.on_event("startup")
+def _probe():
+    """Refuse to start serving if the classifier is already broken. Also warms it up."""
+    try:
+        sel, _ = route_and_capture([{"role": "user", "content": "Hello"}], "startup-probe")
+        src = route_source(sel)
+        if src in BAD_SOURCES:
+            halt(f"startup probe got source={src}")
+    except Exception as e:
+        halt(f"startup probe raised {type(e).__name__}: {e}")
