@@ -10,6 +10,13 @@ import laya
 
 __all__ = ["LayaClassifierEngine", "EngineError"]
 
+TIER_NAMES = [
+    "SIMPLE",
+    "MEDIUM",
+    "COMPLEX",
+    "RESEARCH",
+    "REASONING"
+]
 
 class LayaClassifierEngine(ClassifierEngine):
     """A single-model, single-process text generator.
@@ -102,6 +109,9 @@ class LayaClassifierEngine(ClassifierEngine):
                     "COMPLEX: Broad-context, multi-step planning, implementation, debugging, design, or analysis.",
                     "RESEARCH: Gathering, evaluating, comparing, and synthesizing multiple external sources.",
                     "REASONING: Rigorous multi-hop inference, formal proof, derivation, or verification is the main work.",
+                    "Do not be conservative and route to a higher tier than the work requires. If the next step is trivial, classify it as SIMPLE even if the overall task is complex.",
+                    "If the next step is a single, clear, bounded action, classify it as MEDIUM even if the overall task is complex.",
+                    "If the next step is a hard problem requiring rigorous multi-hop inference, formal proof, derivation, or verification, classify it as REASONING even if the overall task is simpler."
                 ]),
                 "criteria": [
                     "SIMPLE", "MEDIUM", "COMPLEX", "RESEARCH", "REASONING"
@@ -113,9 +123,11 @@ class LayaClassifierEngine(ClassifierEngine):
             output = self._model.predict(
                 state, question
             )
-        print(output)
         probabilities = output['answers']['classify_complexity']['probabilities']
         tier = max(probabilities, key=probabilities.get)
+        from .capture import CAPTURE
+        CAPTURE.data = {"tier": tier, "confidence": output['answers']['classify_complexity']['confidence'],
+                        "probs": probabilities}
         return output['answers']['classify_complexity']['legend'][str(tier)]
 
     def classify_text(self, text, max_new_tokens=16, temperature=0.0):

@@ -9,22 +9,24 @@ max_entries = 1024
 
 [targets]
 models = [
-  "z-ai/glm-5.3-flash",
-  "deepseek/deepseek-v3.2",
-  "deepseek/deepseek-v4.1-flash",
-  "deepseek/deepseek-v4.1-flash",
-  "anthropic/claude-sonnet-4.6",
+    "SIMPLE",
+    "MEDIUM",
+    "COMPLEX",
+    "RESEARCH",
+    "REASONING"
 ]
 
 [x-router]
-local_capability_level = "MEDIUM"   # SIMPLE..REASONING, or "NONE" to disable the local tier
-local_model = "local"
+local_capability_level = "SIMPLE"   # SIMPLE..REASONING, or "NONE" to disable the local tier
+local_model = "SIMPLE"
 classifier_preview_chars = 6000
 
 [x-router.tier_models]
-COMPLEX = "vendor-a/fast"
-RESEARCH = "vendor-b/deep"
-REASONING = "vendor-c/reasoning"
+SIMPLE = "SIMPLE"
+MEDIUM = "MEDIUM"
+COMPLEX = "COMPLEX"
+RESEARCH = "RESEARCH"
+REASONING = "REASONING"
 
 # The classifier runs in this process. Point it at weights; there is no server
 # to start. Omit this table, or set enabled = false, to run heuristic-only.
