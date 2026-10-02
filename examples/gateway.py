@@ -26,14 +26,28 @@ svc = build_service(str(HERE.parent / "config" / "x-router-example.toml"), worke
 OR = "https://openrouter.ai/api/v1"
 KEY = os.environ["OPENROUTER_KEY"]
 LOCAL_BASE = os.environ.get("LOCAL_BASE", "http://127.0.0.1:8001/v1")   # vLLM
+LOCAL_KEY = os.environ.get("LOCAL_KEY", "EMPTY")      # vLLM ignores the key unless you set --api-key
 
-# keys must match the model ids in the profile's [targets] / tier_models exactly
 UPSTREAMS = {
-    "SIMPLE": {"base": OR, "key": KEY, "model": "z-ai/glm-5.3-flash",            "in": 0.02e-6,   "out": 0.3e-6},
-    "MEDIUM": {"base": OR, "key": KEY, "model": "deepseek/deepseek-v3.2",        "in": 0.2088e-6, "out": 0.3096e-6},
-    "COMPLEX": {"base": OR, "key": KEY, "model": "deepseek/deepseek-v4.1-flash",  "in": 0.0243e-6,  "out": 0.60e-6},
-    "RESEARCH": {"base": OR, "key": KEY, "model": "deepseek/deepseek-v4.1-flash",  "in": 0.0243e-6,  "out": 0.60e-6},
-    "REASONING": {"base": OR, "key": KEY, "model": "anthropic/claude-sonnet-4.6",   "in": 3e-6, "out": 15e-6},
+    "SIMPLE":    {"base": LOCAL_BASE, "key": LOCAL_KEY, "model": "local-simple",
+                  "in": 0.0, "out": 0.0,                       # local GPU, no per-token cost
+                  "temperature": 0.2},                         # no reasoning key: vLLM doesn't take OpenRouter's object
+    "MEDIUM":    {"base": OR, "key": KEY, "model": "google/gemma-4-26b-a4b-it",
+                  "in": 0.0, "out": 0.0,                       # TODO: fill in from openrouter.ai/models
+                  "temperature": 0.2,
+                  "reasoning": {"enabled": True}},             # reasoning on, model's default effort
+    "COMPLEX":   {"base": OR, "key": KEY, "model": "deepseek/deepseek-v3.2",
+                  "in": 0.2088e-6, "out": 0.3096e-6,
+                  "temperature": 0.2,
+                  "reasoning": {"enabled": True}},
+    "RESEARCH":  {"base": OR, "key": KEY, "model": "openai/gpt-6-luna",
+                  "in": 0.0, "out": 0.0,                       # TODO: fill in from openrouter.ai/models
+                  "temperature" : 0.2,
+                  "reasoning": {"effort": "medium"}},
+    "REASONING": {"base": OR, "key": KEY, "model": "deepseek/deepseek-v4.1-flash",
+                  "in": 0.0243e-6, "out": 0.60e-6,                      
+                  "temperature" : 0.2,
+                  "reasoning": {"effort": "max"}},
 }
 LOG_DIR = Path(os.environ.get("ROUTER_LOG_DIR", HERE / "logs"))
 LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -43,6 +57,37 @@ except OSError:
     pass
 LOG_FULL_PROMPTS = os.environ.get("LOG_FULL_PROMPTS", "1") == "1"
 FORCE_ENGLISH = os.environ.get("FORCE_ENGLISH") == "1"   # leave unset for benchmark runs
+
+def _env_float(name):
+    v = os.environ.get(name)
+    return float(v) if v else None
+
+# global overrides; None = not forced. Can be changed at runtime via POST /settings
+SETTINGS = {
+    "temperature": _env_float("FORCE_TEMPERATURE"),
+    "reasoning_effort": os.environ.get("FORCE_REASONING_EFFORT") or None,
+}
+
+EFFORTS = {"none", "minimal", "low", "medium", "high", "xhigh", "max"}
+
+def apply_params(body, up):
+    """Mutates the upstream request body. Precedence: forced global > client > tier default."""
+    # temperature
+    if SETTINGS["temperature"] is not None:
+        body["temperature"] = SETTINGS["temperature"]
+    elif "temperature" not in body and up.get("temperature") is not None:
+        body["temperature"] = up["temperature"]
+
+    # reasoning: OpenRouter-only; strip it for the local upstream
+    if up["base"] != OR:
+        body.pop("reasoning", None)
+        body.pop("reasoning_effort", None)
+        return
+    if SETTINGS["reasoning_effort"]:
+        body.pop("reasoning_effort", None)
+        body["reasoning"] = {"effort": SETTINGS["reasoning_effort"]}
+    elif "reasoning" not in body and "reasoning_effort" not in body and up.get("reasoning"):
+        body["reasoning"] = dict(up["reasoning"])
 
 _log_lock = threading.Lock()
 SESSION_COUNT = {}                     # session id -> requests seen
@@ -173,6 +218,27 @@ def mark(label: str):
     CURRENT["label"] = "" if label == "none" else label
     return {"label": CURRENT["label"]}
 
+@app.get("/settings")
+def get_settings():
+    return SETTINGS
+
+
+@app.post("/settings")
+async def set_settings(req: Request):
+    """e.g. {"temperature": 0.0, "reasoning_effort": "low"}; null clears an override."""
+    data = await req.json()
+    if "temperature" in data:
+        t = data["temperature"]
+        if t is not None and not (0 <= float(t) <= 2):
+            return JSONResponse({"error": "temperature must be in [0, 2]"}, status_code=400)
+        SETTINGS["temperature"] = None if t is None else float(t)
+    if "reasoning_effort" in data:
+        e = data["reasoning_effort"]
+        if e is not None and e not in EFFORTS:
+            return JSONResponse({"error": f"reasoning_effort must be one of {sorted(EFFORTS)}"},
+                                status_code=400)
+        SETTINGS["reasoning_effort"] = e
+    return SETTINGS
 
 # ---------------------------------------------------------------- main handler
 @app.post("/v1/chat/completions")
@@ -242,6 +308,9 @@ async def chat(req: Request):
               "| conf", cap.get("confidence"), "|", label, flush=True)
 
         body["model"] = up["model"]
+        apply_params(body, up)
+        rec["req_temperature"] = body.get("temperature")
+        rec["req_reasoning"] = body.get("reasoning") or body.get("reasoning_effort")
         url = f"{up['base']}/chat/completions"
         headers = {"Authorization": f"Bearer {up['key']}"}
         t0 = time.time()
