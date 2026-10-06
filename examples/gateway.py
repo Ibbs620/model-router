@@ -30,22 +30,22 @@ LOCAL_KEY = os.environ.get("LOCAL_KEY", "EMPTY")      # vLLM ignores the key unl
 
 UPSTREAMS = {
     "SIMPLE":    {"base": LOCAL_BASE, "key": LOCAL_KEY, "model": "local-simple",
-                  "in": 0.0, "out": 0.0,                       # local GPU, no per-token cost
-                  "temperature": 0.2},                         # no reasoning key: vLLM doesn't take OpenRouter's object
+                  "in": 0.0, "out": 0.0,                       
+                  "temperature": 0.2},                         
     "MEDIUM":    {"base": OR, "key": KEY, "model": "google/gemma-4-26b-a4b-it",
-                  "in": 0.0, "out": 0.0,                       # TODO: fill in from openrouter.ai/models
+                  "in": 0.07e-6, "out": 0.34e-6,                       
                   "temperature": 0.2,
-                  "reasoning": {"enabled": True}},             # reasoning on, model's default effort
+                  "reasoning": {"enabled": True}},             
     "COMPLEX":   {"base": OR, "key": KEY, "model": "deepseek/deepseek-v3.2",
-                  "in": 0.2088e-6, "out": 0.3096e-6,
+                  "in": 0.26e-6, "out": 0.38e-6,
                   "temperature": 0.2,
                   "reasoning": {"enabled": True}},
     "RESEARCH":  {"base": OR, "key": KEY, "model": "openai/gpt-6-luna",
-                  "in": 0.0, "out": 0.0,                       # TODO: fill in from openrouter.ai/models
+                  "in": 0.1e-6, "out": 0.5e-6,                       
                   "temperature" : 0.2,
                   "reasoning": {"effort": "medium"}},
     "REASONING": {"base": OR, "key": KEY, "model": "deepseek/deepseek-v4.1-flash",
-                  "in": 0.0243e-6, "out": 0.60e-6,                      
+                  "in": 0.15e-6, "out": 0.6e-6,                      
                   "temperature" : 0.2,
                   "reasoning": {"effort": "max"}},
 }

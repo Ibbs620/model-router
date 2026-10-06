@@ -32,9 +32,9 @@ REASONING = "REASONING"
 # to start. Omit this table, or set enabled = false, to run heuristic-only.
 [x-router.classifier_model]
 enabled = true
-system_one_model = true
-# model_path = "C:/Users/A2306101941/models/Qwen3-0.6B"
-model_path = "C:/Users/A2306101941/models/laya"
+engine = "jev-lite"
+model_path = "C:/Users/A2306101941/models/jev-lite"
+# model_path = "C:/Users/A2306101941/models/laya"
 
 # "auto" picks cuda:0 when CUDA is available, else cpu. Pin an index on a shared
 # box so the classifier does not land on a card that is already busy.

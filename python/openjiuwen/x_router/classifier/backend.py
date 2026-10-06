@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+from openjiuwen.x_router.classifier.jev_lite_engine import JevLiteClassifierEngine
+
 from ..types import ParamsError
 from .engine import ClassifierEngine
 from .laya_engine import LayaClassifierEngine
@@ -65,9 +67,16 @@ def backend_from_config(config):
             "[classifier_model] has no model_path; set one, or set "
             "enabled = false to run on the heuristic classifier instead"
         )
-
-    
-    if section.get("system_one_model", True):
+    engine_type = section.get("engine", "slm").strip().lower()
+    if engine_type == "slm":
+        return LocalBackend(
+                model_path=model_path,
+                max_tokens=section.get("max_tokens", 16),
+                device=section.get("device", "auto"),
+                dtype=section.get("dtype", "auto"),
+                max_input_tokens=section.get("max_input_tokens", 4096),
+            )
+    elif engine_type == "laya":
         engine = LayaClassifierEngine(model_path=model_path)
         return LocalBackend(
                 engine=engine,
@@ -76,10 +85,13 @@ def backend_from_config(config):
                 dtype=section.get("dtype", "auto"),
                 max_input_tokens=section.get("max_input_tokens", 4096),
         )
-    return LocalBackend(
-        model_path=model_path,
-        max_tokens=section.get("max_tokens", 16),
-        device=section.get("device", "auto"),
-        dtype=section.get("dtype", "auto"),
-        max_input_tokens=section.get("max_input_tokens", 4096),
-    )
+    elif engine_type == "jev-lite":
+        engine = JevLiteClassifierEngine(model_path=model_path)
+        return LocalBackend(
+                engine=engine,
+                max_tokens=section.get("max_tokens", 16),
+                device=section.get("device", "auto"),
+                dtype=section.get("dtype", "auto"),
+                max_input_tokens=section.get("max_input_tokens", 4096),
+        )
+    
